@@ -203,6 +203,7 @@ function Header({ mileage, setMileage }) {
       style={{
         borderBottom: `1px solid ${COLORS.border}`,
         padding: "20px 16px 16px",
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 20px)",
         background: `linear-gradient(180deg, ${COLORS.surface}, ${COLORS.bg})`,
       }}
     >
@@ -2228,6 +2229,12 @@ function Splash({ onDone }) {
     const t = setTimeout(onDone, 2200);
     return () => clearTimeout(t);
   }, []);
+
+  const isNarrowPortrait =
+    typeof window !== "undefined" &&
+    window.innerWidth <= 640 &&
+    window.innerHeight > window.innerWidth;
+
   return (
     <div
       onClick={onDone}
@@ -2243,10 +2250,14 @@ function Splash({ onDone }) {
         style={{
           position: "absolute",
           inset: 0,
+          backgroundColor: COLORS.bg,
           backgroundImage: `url(${SPLASH_PHOTO})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center 40%",
-          animation: "nd-photo-in 1.6s cubic-bezier(.2,.8,.2,1)",
+          backgroundSize: isNarrowPortrait ? "contain" : "cover",
+          backgroundRepeat: "no-repeat",
+          backgroundPosition: isNarrowPortrait ? "center center" : "center 40%",
+          animation: isNarrowPortrait
+            ? "nd-fade-in 1.2s ease"
+            : "nd-photo-in 1.6s cubic-bezier(.2,.8,.2,1)",
         }}
       />
       <div
