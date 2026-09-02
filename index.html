@@ -339,6 +339,42 @@ function SummaryStrip({ oilRemain, totalCost, trackDays, modCount, onModClick })
   );
 }
 
+function AppTools({ oilInterval, setOilInterval, onExport, onImport }) {
+  return (
+    <div
+      style={{
+        marginTop: 22,
+        padding: 14,
+        background: COLORS.surface,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 10,
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>設定・データ管理</div>
+      <Field label="オイル交換周期 (km)">
+        <select
+          value={oilInterval}
+          onChange={(e) => setOilInterval(Number(e.target.value))}
+          style={inputStyle}
+        >
+          {[3000, 4000, 5000, 6000, 7500, 10000].map((value) => (
+            <option key={value} value={value}>{value.toLocaleString()}km</option>
+          ))}
+        </select>
+      </Field>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={onExport} style={{ ...secondaryButtonStyle, flex: 1 }}>
+          バックアップ保存
+        </button>
+        <label style={{ ...secondaryButtonStyle, flex: 1, textAlign: "center" }}>
+          バックアップ復元
+          <input type="file" accept="application/json,.json" onChange={onImport} hidden />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 function MiniStat({ label, value, warn, onClick }) {
   return (
     <div
@@ -459,6 +495,18 @@ const inputStyle = {
   fontSize: 14,
 };
 
+const secondaryButtonStyle = {
+  boxSizing: "border-box",
+  background: COLORS.surfaceRaised,
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: 7,
+  color: COLORS.text,
+  padding: "9px 8px",
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
 function MaintTab({ records, setRecords, mileage }) {
   const blankMeta = {
     date: new Date().toISOString().slice(0, 10),
@@ -474,6 +522,7 @@ function MaintTab({ records, setRecords, mileage }) {
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [editingItemIndex, setEditingItemIndex] = useState(null);
   const [selectedYear, setSelectedYear] = useState("all");
 
   const resetAll = () => {
@@ -484,6 +533,7 @@ function MaintTab({ records, setRecords, mileage }) {
     setCurrentCustomName("");
     setError("");
     setEditingId(null);
+    setEditingItemIndex(null);
   };
 
   const startEdit = (record) => {
@@ -509,6 +559,7 @@ function MaintTab({ records, setRecords, mileage }) {
     setCurrentCustomName("");
     setError("");
     setEditingId(record.id);
+    setEditingItemIndex(null);
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -527,18 +578,53 @@ function MaintTab({ records, setRecords, mileage }) {
       return;
     }
     const label = currentCategory === "その他" ? currentCustomName.trim() : currentCategory;
-    setItems([...items, { category: label, details: currentDetails }]);
+    const nextItem = { category: label, details: currentDetails };
+    if (editingItemIndex !== null) {
+      setItems(items.map((item, index) => index === editingItemIndex ? nextItem : item));
+    } else {
+      setItems([...items, nextItem]);
+    }
     setCurrentCategory("");
     setCurrentDetails({});
     setCurrentCustomName("");
     setError("");
+    setEditingItemIndex(null);
   };
 
-  const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
+  const editItem = (item, index) => {
+    const isPreset = MAINT_CATEGORIES.includes(item.category);
+    setCurrentCategory(isPreset ? item.category : "その他");
+    setCurrentCustomName(isPreset ? "" : item.category);
+    setCurrentDetails({ ...(item.details || {}) });
+    setEditingItemIndex(index);
+    setError("");
+  };
+
+  const removeItem = (idx) => {
+    setItems(items.filter((_, i) => i !== idx));
+    if (editingItemIndex === idx) {
+      setCurrentCategory("");
+      setCurrentDetails({});
+      setCurrentCustomName("");
+      setEditingItemIndex(null);
+    }
+  };
 
   const save = () => {
     if (items.length === 0) {
       setError("項目を1つ以上追加してください");
+      return;
+    }
+    if (!meta.date) {
+      setError("日付を入力してください");
+      return;
+    }
+    if (meta.mileage !== "" && Number(meta.mileage) < 0) {
+      setError("走行距離は0以上で入力してください");
+      return;
+    }
+    if (meta.cost !== "" && Number(meta.cost) < 0) {
+      setError("費用は0以上で入力してください");
       return;
     }
     setError("");
@@ -555,7 +641,10 @@ function MaintTab({ records, setRecords, mileage }) {
     setShowForm(false);
   };
 
-  const remove = (id) => setRecords(records.filter((r) => r.id !== id));
+  const remove = (id) => {
+    if (!window.confirm("この整備記録を削除しますか？")) return;
+    setRecords(records.filter((r) => r.id !== id));
+  };
 
   const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
   const years = Array.from(new Set(records.map((r) => yearOf(r.date)).filter(Boolean))).sort(
@@ -687,19 +776,37 @@ function MaintTab({ records, setRecords, mileage }) {
                         </div>
                       ))}
                   </div>
-                  <button
-                    onClick={() => removeItem(idx)}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: COLORS.textMuted,
-                      cursor: "pointer",
-                      padding: 2,
-                    }}
-                    aria-label="削除"
-                  >
-                    <X size={14} />
-                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => editItem(it, idx)}
+                      style={{
+                        background: "transparent",
+                        border: `1px solid ${COLORS.border}`,
+                        borderRadius: 5,
+                        color: COLORS.textMuted,
+                        cursor: "pointer",
+                        padding: "3px 6px",
+                        fontSize: 10,
+                      }}
+                    >
+                      編集
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(idx)}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: COLORS.textMuted,
+                        cursor: "pointer",
+                        padding: 2,
+                      }}
+                      aria-label="削除"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -792,7 +899,7 @@ function MaintTab({ records, setRecords, mileage }) {
                 }}
               >
                 <Plus size={14} />
-                この項目を追加
+                {editingItemIndex !== null ? "この項目を更新" : "この項目を追加"}
               </button>
             </div>
           )}
@@ -985,12 +1092,14 @@ function CircuitTab({ records, setRecords }) {
   const [form, setForm] = useState(blankForm);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState("");
   const [selectedYear, setSelectedYear] = useState("all");
   const [viewMode, setViewMode] = useState("date");
 
   const startAdd = () => {
     setForm(blankForm);
     setEditingId(null);
+    setError("");
     setShowForm(true);
   };
 
@@ -1020,12 +1129,32 @@ function CircuitTab({ records, setRecords }) {
       memo: record.memo || "",
     });
     setEditingId(record.id);
+    setError("");
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const save = () => {
-    if (!form.date) return;
+    if (!form.date) {
+      setError("日付を入力してください");
+      return;
+    }
+    if (form.circuit === "その他" && !form.customCircuit.trim()) {
+      setError("サーキット名を入力してください");
+      return;
+    }
+    const lapMinutes = Number(form.lapMin || 0);
+    const lapSeconds = Number(form.lapSec || 0);
+    if (lapMinutes < 0 || lapSeconds < 0 || lapSeconds >= 60) {
+      setError("ラップタイムは0分以上、秒は0〜59.999で入力してください");
+      return;
+    }
+    if ((form.tireF !== "" && (Number(form.tireF) < 50 || Number(form.tireF) > 500)) ||
+        (form.tireR !== "" && (Number(form.tireR) < 50 || Number(form.tireR) > 500))) {
+      setError("タイヤ空気圧は50〜500kPaで入力してください");
+      return;
+    }
+    setError("");
     const circuit =
       form.circuit === "その他" && form.customCircuit
         ? form.customCircuit
@@ -1051,7 +1180,10 @@ function CircuitTab({ records, setRecords }) {
     setShowForm(false);
   };
 
-  const remove = (id) => setRecords(records.filter((r) => r.id !== id));
+  const remove = (id) => {
+    if (!window.confirm("このサーキット記録を削除しますか？")) return;
+    setRecords(records.filter((r) => r.id !== id));
+  };
   const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
   const years = Array.from(new Set(records.map((r) => yearOf(r.date)).filter(Boolean))).sort(
     (a, b) => b - a
@@ -1390,6 +1522,10 @@ function CircuitTab({ records, setRecords }) {
             />
           </Field>
 
+          {error && (
+            <div style={{ color: "#e08585", fontSize: 12, marginBottom: 10 }}>{error}</div>
+          )}
+
           <button
             onClick={save}
             style={{
@@ -1517,6 +1653,10 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
       setError("パーツ名を入力してください");
       return;
     }
+    if (form.cost !== "" && Number(form.cost) < 0) {
+      setError("費用は0以上で入力してください");
+      return;
+    }
     setError("");
     if (editingId) {
       setRecords(records.map((r) => (r.id === editingId ? { ...r, ...form } : r)));
@@ -1528,7 +1668,10 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
     setShowForm(false);
   };
 
-  const remove = (id) => setRecords(records.filter((r) => r.id !== id));
+  const remove = (id) => {
+    if (!window.confirm("このカスタム記録を削除しますか？")) return;
+    setRecords(records.filter((r) => r.id !== id));
+  };
 
   const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
   const grouped = CUSTOM_CATEGORIES.map((cat) => ({
@@ -1943,8 +2086,16 @@ function MainApp() {
   const [maintRecords, setMaintRecords] = useState([]);
   const [circuitRecords, setCircuitRecords] = useState([]);
   const [customRecords, setCustomRecords] = useState([]);
+  const [oilInterval, setOilInterval] = useState(5000);
+  const [syncStatus, setSyncStatus] = useState("同期確認中");
   const [showModPopup, setShowModPopup] = useState(false);
   const [highlightModId, setHighlightModId] = useState(null);
+
+  useEffect(() => {
+    const handleStatus = (event) => setSyncStatus(event.detail || "端末保存のみ");
+    window.addEventListener("nd-sync-status", handleStatus);
+    return () => window.removeEventListener("nd-sync-status", handleStatus);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1962,6 +2113,7 @@ function MainApp() {
       setMaintRecords(loadedMaintRecords);
       setCircuitRecords(data["nd-circuit-records"] || []);
       setCustomRecords(data["nd-custom-records"] || []);
+      setOilInterval(Number(data["nd-oil-interval"]) || 5000);
       setLoaded(true);
     })();
 
@@ -1999,6 +2151,11 @@ function MainApp() {
     saveAppValue("nd-custom-records", customRecords);
   }, [customRecords, loaded]);
 
+  useEffect(() => {
+    if (!loaded) return;
+    saveAppValue("nd-oil-interval", oilInterval);
+  }, [oilInterval, loaded]);
+
   const hasOilChange = (r) => {
     if (r.items) return r.items.some((it) => it.category === "エンジンオイル交換");
     if (r.categories) return r.categories.includes("エンジンオイル交換");
@@ -2007,11 +2164,57 @@ function MainApp() {
   const lastOil = maintRecords
     .filter(hasOilChange)
     .sort((a, b) => (Number(b.mileage) || 0) - (Number(a.mileage) || 0))[0];
-  const oilDueAt = lastOil ? (Number(lastOil.mileage) || 0) + 5000 : null;
+  const oilDueAt = lastOil ? (Number(lastOil.mileage) || 0) + oilInterval : null;
   const oilRemain = oilDueAt !== null ? oilDueAt - mileage : null;
 
   const totalCost = maintRecords.reduce((s, r) => s + (Number(r.cost) || 0), 0);
   const trackDays = circuitRecords.length;
+
+  const exportBackup = () => {
+    const backup = {
+      app: "Roadster Log",
+      exportedAt: new Date().toISOString(),
+      data: {
+        "nd-mileage": mileage,
+        "nd-maint-records": maintRecords,
+        "nd-circuit-records": circuitRecords,
+        "nd-custom-records": customRecords,
+        "nd-oil-interval": oilInterval,
+      },
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Roadster_Log_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const importBackup = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      const data = parsed.data || parsed;
+      const maint = data["nd-maint-records"];
+      const circuit = data["nd-circuit-records"];
+      const custom = data["nd-custom-records"];
+      if (!Array.isArray(maint) || !Array.isArray(circuit) || !Array.isArray(custom)) {
+        throw new Error("Roadster Logのバックアップ形式ではありません");
+      }
+      if (!window.confirm("現在のデータをバックアップ内容で置き換えますか？")) return;
+      setMileage(Number(data["nd-mileage"]) || 0);
+      setMaintRecords(maint);
+      setCircuitRecords(circuit);
+      setCustomRecords(custom);
+      setOilInterval(Number(data["nd-oil-interval"]) || 5000);
+      window.alert("バックアップを復元しました");
+    } catch (err) {
+      window.alert("復元できませんでした：" + (err.message || err));
+    }
+  };
 
   return (
     <div
@@ -2035,6 +2238,18 @@ function MainApp() {
           onModClick={() => setShowModPopup(true)}
         />
 
+        <div
+          style={{
+            color: syncStatus === "同期済み" ? COLORS.green :
+              syncStatus === "同期失敗" ? "#e08585" : COLORS.textMuted,
+            fontSize: 11,
+            textAlign: "right",
+            margin: "-8px 2px 10px",
+          }}
+        >
+          ● {syncStatus}
+        </div>
+
         <TabBar tab={tab} setTab={setTab} />
 
         {tab === "maint" && (
@@ -2055,6 +2270,13 @@ function MainApp() {
             onHighlightHandled={() => setHighlightModId(null)}
           />
         )}
+
+        <AppTools
+          oilInterval={oilInterval}
+          setOilInterval={setOilInterval}
+          onExport={exportBackup}
+          onImport={importBackup}
+        />
       </div>
 
       {showModPopup && (
@@ -2210,9 +2432,27 @@ const STORAGE_KEYS = [
   "nd-maint-records",
   "nd-circuit-records",
   "nd-custom-records",
+  "nd-oil-interval",
 ];
 const API_URL_KEY = "nd-gas-api-url";
 const SYNC_KEY_KEY = "nd-gas-sync-key";
+const LOCAL_META_KEY = "nd-sync-updated-at";
+let pendingSyncCount = 0;
+let syncHadError = false;
+
+function emitSyncStatus(status) {
+  window.dispatchEvent(new CustomEvent("nd-sync-status", { detail: status }));
+}
+
+function getLocalMeta() {
+  return loadJSON(LOCAL_META_KEY, {});
+}
+
+function setLocalUpdatedAt(key, updatedAt) {
+  const meta = getLocalMeta();
+  meta[key] = Number(updatedAt) || Date.now();
+  saveJSON(LOCAL_META_KEY, meta);
+}
 
 function loadJSON(key, fallback) {
   try {
@@ -2233,6 +2473,7 @@ function getLocalSnapshot() {
     "nd-maint-records": loadJSON("nd-maint-records", []),
     "nd-circuit-records": loadJSON("nd-circuit-records", []),
     "nd-custom-records": loadJSON("nd-custom-records", []),
+    "nd-oil-interval": Number(localStorage.getItem("nd-oil-interval")) || 5000,
   };
 }
 
@@ -2308,35 +2549,51 @@ function jsonpLoad(url, syncKey) {
 
 function postToGas(params) {
   const cfg = getApiConfig();
-  if (!cfg.url || !cfg.key) return;
+  if (!cfg.url || !cfg.key) return Promise.reject(new Error("同期設定がありません"));
 
-  let iframe = document.getElementById("nd-sync-frame");
-  if (!iframe) {
-    iframe = document.createElement("iframe");
-    iframe.id = "nd-sync-frame";
-    iframe.name = "nd-sync-frame";
+  return new Promise((resolve, reject) => {
+    const targetName = "nd-sync-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+    const iframe = document.createElement("iframe");
+    const form = document.createElement("form");
+    let submitted = false;
+    let submittedAt = 0;
+    const timer = setTimeout(() => cleanup(new Error("同期送信がタイムアウトしました")), 15000);
+
+    function cleanup(err) {
+      clearTimeout(timer);
+      setTimeout(() => {
+        form.remove();
+        iframe.remove();
+      }, 100);
+      err ? reject(err) : resolve();
+    }
+
+    iframe.name = targetName;
     iframe.style.display = "none";
+    iframe.onload = () => {
+      if (submitted && Date.now() - submittedAt > 200) cleanup();
+    };
     document.body.appendChild(iframe);
-  }
 
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = cfg.url;
-  form.target = "nd-sync-frame";
-  form.style.display = "none";
+    form.method = "POST";
+    form.action = cfg.url;
+    form.target = targetName;
+    form.style.display = "none";
 
-  const payload = { ...params, syncKey: cfg.key };
-  Object.entries(payload).forEach(([k, v]) => {
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = k;
-    input.value = typeof v === "string" ? v : JSON.stringify(v);
-    form.appendChild(input);
+    const payload = { ...params, syncKey: cfg.key };
+    Object.entries(payload).forEach(([k, v]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = k;
+      input.value = typeof v === "string" ? v : JSON.stringify(v);
+      form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    submitted = true;
+    submittedAt = Date.now();
+    form.submit();
   });
-
-  document.body.appendChild(form);
-  form.submit();
-  setTimeout(() => form.remove(), 1000);
 }
 
 function hasMeaningfulData(data) {
@@ -2349,7 +2606,7 @@ function hasMeaningfulData(data) {
 function copyToLocal(data) {
   STORAGE_KEYS.forEach((key) => {
     if (!(key in data)) return;
-    if (key === "nd-mileage") {
+    if (key === "nd-mileage" || key === "nd-oil-interval") {
       try { localStorage.setItem(key, String(data[key] || 0)); } catch (e) {}
     } else {
       saveJSON(key, data[key]);
@@ -2360,41 +2617,107 @@ function copyToLocal(data) {
 async function loadAppData() {
   const local = getLocalSnapshot();
   const cfg = ensureApiConfig();
-  if (!cfg.url || !cfg.key) return local;
+  if (!cfg.url || !cfg.key) {
+    emitSyncStatus("端末保存のみ");
+    return local;
+  }
 
   try {
+    emitSyncStatus("同期確認中");
     const result = await jsonpLoad(cfg.url, cfg.key);
     if (!result || !result.ok) {
       console.warn("Drive同期を開始できませんでした:", result && result.error);
+      emitSyncStatus("同期失敗");
       return local;
     }
 
     const serverData = result.data || {};
-    if (!hasMeaningfulData(serverData) && hasMeaningfulData(local)) {
-      postToGas({ action: "saveAll", data: JSON.stringify(local) });
-      return local;
-    }
+    const serverMeta = serverData._updatedAt || {};
+    const localMeta = getLocalMeta();
+    const merged = {};
 
-    copyToLocal(serverData);
-    return { ...local, ...serverData };
+    STORAGE_KEYS.forEach((key) => {
+      const localTime = Number(localMeta[key]) || 0;
+      const serverTime = Number(serverMeta[key]) || 0;
+      const serverHasValue = Object.prototype.hasOwnProperty.call(serverData, key);
+
+      if (localTime > serverTime || (!serverHasValue && localTime > 0)) {
+        merged[key] = local[key];
+        postToGas({
+          action: "saveValue",
+          key,
+          value: JSON.stringify(local[key]),
+          updatedAt: String(localTime),
+        }).catch(() => {});
+      } else if (serverHasValue) {
+        merged[key] = serverData[key];
+        if (serverTime) setLocalUpdatedAt(key, serverTime);
+      } else {
+        const now = Date.now();
+        merged[key] = local[key];
+        setLocalUpdatedAt(key, now);
+        postToGas({
+          action: "saveValue",
+          key,
+          value: JSON.stringify(local[key]),
+          updatedAt: String(now),
+        }).catch(() => {});
+      }
+    });
+
+    copyToLocal(merged);
+    emitSyncStatus("同期済み");
+    return merged;
   } catch (err) {
     console.warn("Drive読込に失敗。端末バックアップを使用します。", err);
+    emitSyncStatus("同期失敗");
     return local;
   }
 }
 
 function saveAppValue(key, value) {
   // 端末側には即保存。
-  if (key === "nd-mileage") {
+  if (key === "nd-mileage" || key === "nd-oil-interval") {
     try { localStorage.setItem(key, String(value || 0)); } catch (e) {}
   } else {
     saveJSON(key, value);
   }
 
-  // GASへは通常のHTMLフォームPOSTで送信（クロスオリジンでも送信可能）。
+  const updatedAt = Date.now();
+  setLocalUpdatedAt(key, updatedAt);
+
   const cfg = getApiConfig();
-  if (!cfg.url || !cfg.key) return;
-  postToGas({ action: "saveValue", key, value: JSON.stringify(value) });
+  if (!cfg.url || !cfg.key) {
+    emitSyncStatus("端末保存のみ");
+    return;
+  }
+
+  pendingSyncCount += 1;
+  emitSyncStatus("同期中");
+  postToGas({
+    action: "saveValue",
+    key,
+    value: JSON.stringify(value),
+    updatedAt: String(updatedAt),
+  })
+    .then(() => jsonpLoad(cfg.url, cfg.key))
+    .then((result) => {
+      const savedValue = result && result.ok && result.data && result.data[key];
+      if (JSON.stringify(savedValue) !== JSON.stringify(value)) {
+        throw new Error("保存内容を確認できませんでした");
+      }
+    })
+    .catch((err) => {
+      console.warn("Drive同期に失敗しました", err);
+      syncHadError = true;
+    })
+    .finally(() => {
+      pendingSyncCount = Math.max(0, pendingSyncCount - 1);
+      if (pendingSyncCount === 0) {
+        emitSyncStatus(syncHadError ? "同期失敗" : "同期済み");
+        syncHadError = false;
+      }
+    });
 }
 
 /* ---- launch splash screen: ND roadster illustration, auto-advances ---- */
