@@ -1607,7 +1607,7 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
                 fontWeight: 600,
               }}
             >
-              編集中
+              カスタム記録を編集中
             </div>
           )}
           <div style={{ display: "flex", gap: 10 }}>
@@ -1733,14 +1733,12 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
             <div
               key={r.id}
               ref={(el) => (cardRefs.current[r.id] = el)}
-              onClick={() => startEdit(r)}
               style={{
                 background: COLORS.surface,
                 border: `1px solid ${flashId === r.id ? COLORS.amber : COLORS.border}`,
                 borderRadius: 10,
                 padding: 12,
                 marginBottom: 8,
-                cursor: "pointer",
                 transition: "border-color 0.3s",
               }}
             >
@@ -1794,10 +1792,22 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
                     </span>
                   )}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      remove(r.id);
+                    onClick={() => startEdit(r)}
+                    style={{
+                      background: "transparent",
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: 6,
+                      color: COLORS.textMuted,
+                      cursor: "pointer",
+                      padding: "4px 7px",
+                      fontSize: 11,
                     }}
+                    aria-label="編集"
+                  >
+                    編集
+                  </button>
+                  <button
+                    onClick={() => remove(r.id)}
                     style={{
                       background: "transparent",
                       border: "none",
@@ -1943,8 +1953,13 @@ function MainApp() {
       const data = await loadAppData();
       if (cancelled) return;
 
-      setMileage(Number(data["nd-mileage"]) || 0);
-      setMaintRecords(data["nd-maint-records"] || []);
+      const loadedMaintRecords = data["nd-maint-records"] || [];
+      const highestRecordedMileage = loadedMaintRecords.reduce(
+        (max, record) => Math.max(max, Number(record.mileage) || 0),
+        0
+      );
+      setMileage(Math.max(Number(data["nd-mileage"]) || 0, highestRecordedMileage));
+      setMaintRecords(loadedMaintRecords);
       setCircuitRecords(data["nd-circuit-records"] || []);
       setCustomRecords(data["nd-custom-records"] || []);
       setLoaded(true);
@@ -1965,6 +1980,17 @@ function MainApp() {
 
   useEffect(() => {
     if (!loaded) return;
+    const highestRecordedMileage = maintRecords.reduce(
+      (max, record) => Math.max(max, Number(record.mileage) || 0),
+      0
+    );
+    if (highestRecordedMileage > mileage) {
+      setMileage(highestRecordedMileage);
+    }
+  }, [maintRecords, mileage, loaded]);
+
+  useEffect(() => {
+    if (!loaded) return;
     saveAppValue("nd-circuit-records", circuitRecords);
   }, [circuitRecords, loaded]);
 
@@ -1980,8 +2006,8 @@ function MainApp() {
   };
   const lastOil = maintRecords
     .filter(hasOilChange)
-    .sort((a, b) => (b.mileage || 0) - (a.mileage || 0))[0];
-  const oilDueAt = lastOil ? (lastOil.mileage || 0) + 5000 : null;
+    .sort((a, b) => (Number(b.mileage) || 0) - (Number(a.mileage) || 0))[0];
+  const oilDueAt = lastOil ? (Number(lastOil.mileage) || 0) + 5000 : null;
   const oilRemain = oilDueAt !== null ? oilDueAt - mileage : null;
 
   const totalCost = maintRecords.reduce((s, r) => s + (Number(r.cost) || 0), 0);
