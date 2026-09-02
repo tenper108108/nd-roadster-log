@@ -473,6 +473,7 @@ function MaintTab({ records, setRecords, mileage }) {
   const [currentCustomName, setCurrentCustomName] = useState("");
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [selectedYear, setSelectedYear] = useState("all");
 
   const resetAll = () => {
@@ -482,6 +483,34 @@ function MaintTab({ records, setRecords, mileage }) {
     setCurrentDetails({});
     setCurrentCustomName("");
     setError("");
+    setEditingId(null);
+  };
+
+  const startEdit = (record) => {
+    const editableItems = record.items ||
+      (record.categories || [record.category])
+        .filter(Boolean)
+        .map((category) => ({ category, details: {} }));
+
+    setMeta({
+      date: record.date || new Date().toISOString().slice(0, 10),
+      mileage: record.mileage || "",
+      cost: record.cost || "",
+      memo: record.memo || "",
+    });
+    setItems(
+      editableItems.map((item) => ({
+        ...item,
+        details: { ...(item.details || {}) },
+      }))
+    );
+    setCurrentCategory("");
+    setCurrentDetails({});
+    setCurrentCustomName("");
+    setError("");
+    setEditingId(record.id);
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const pickCategory = (c) => {
@@ -513,7 +542,15 @@ function MaintTab({ records, setRecords, mileage }) {
       return;
     }
     setError("");
-    setRecords([{ id: uid(), ...meta, items }, ...records]);
+    if (editingId) {
+      setRecords(
+        records.map((record) =>
+          record.id === editingId ? { ...record, ...meta, items } : record
+        )
+      );
+    } else {
+      setRecords([{ id: uid(), ...meta, items }, ...records]);
+    }
     resetAll();
     setShowForm(false);
   };
@@ -585,6 +622,18 @@ function MaintTab({ records, setRecords, mileage }) {
             marginBottom: 16,
           }}
         >
+          {editingId && (
+            <div
+              style={{
+                fontSize: 12,
+                color: COLORS.amber,
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              整備記録を編集中
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}>
               <Field label="日付">
@@ -790,7 +839,7 @@ function MaintTab({ records, setRecords, mileage }) {
             }}
           >
             <Plus size={16} />
-            記録を保存
+            {editingId ? "更新する" : "記録を保存"}
           </button>
         </div>
       )}
@@ -885,6 +934,21 @@ function MaintTab({ records, setRecords, mileage }) {
                 </span>
               )}
               <button
+                onClick={() => startEdit(r)}
+                style={{
+                  background: "transparent",
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: 6,
+                  color: COLORS.textMuted,
+                  cursor: "pointer",
+                  padding: "4px 7px",
+                  fontSize: 11,
+                }}
+                aria-label="編集"
+              >
+                編集
+              </button>
+              <button
                 onClick={() => remove(r.id)}
                 style={{
                   background: "transparent",
@@ -920,10 +984,47 @@ function CircuitTab({ records, setRecords }) {
   };
   const [form, setForm] = useState(blankForm);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [selectedYear, setSelectedYear] = useState("all");
   const [viewMode, setViewMode] = useState("date");
 
-  const add = () => {
+  const startAdd = () => {
+    setForm(blankForm);
+    setEditingId(null);
+    setShowForm(true);
+  };
+
+  const startEdit = (record) => {
+    const isPresetCircuit = CIRCUITS.includes(record.circuit);
+    let lapMin = record.lapMin || "";
+    let lapSec = record.lapSec || "";
+
+    if (!lapMin && !lapSec && record.bestLap) {
+      const parts = String(record.bestLap).split(":");
+      if (parts.length === 2) {
+        lapMin = parts[0];
+        lapSec = parts[1];
+      }
+    }
+
+    setForm({
+      date: record.date || new Date().toISOString().slice(0, 10),
+      circuit: isPresetCircuit ? record.circuit : "その他",
+      customCircuit: isPresetCircuit ? "" : record.circuit || "",
+      lapMin,
+      lapSec,
+      weather: record.weather || "晴れ",
+      temp: record.temp || "",
+      tireF: record.tireF || "",
+      tireR: record.tireR || "",
+      memo: record.memo || "",
+    });
+    setEditingId(record.id);
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const save = () => {
     if (!form.date) return;
     const circuit =
       form.circuit === "その他" && form.customCircuit
@@ -935,8 +1036,18 @@ function CircuitTab({ records, setRecords }) {
       const s = Number(form.lapSec) || 0;
       bestLap = `${m}:${s.toFixed(3).padStart(6, "0")}`;
     }
-    setRecords([{ id: uid(), ...form, circuit, bestLap }, ...records]);
+    const savedRecord = { ...form, circuit, bestLap };
+    if (editingId) {
+      setRecords(
+        records.map((record) =>
+          record.id === editingId ? { ...record, ...savedRecord } : record
+        )
+      );
+    } else {
+      setRecords([{ id: uid(), ...savedRecord }, ...records]);
+    }
     setForm(blankForm);
+    setEditingId(null);
     setShowForm(false);
   };
 
@@ -1040,6 +1151,21 @@ function CircuitTab({ records, setRecords }) {
             </span>
           )}
           <button
+            onClick={() => startEdit(r)}
+            style={{
+              background: "transparent",
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 6,
+              color: COLORS.textMuted,
+              cursor: "pointer",
+              padding: "4px 7px",
+              fontSize: 11,
+            }}
+            aria-label="編集"
+          >
+            編集
+          </button>
+          <button
             onClick={() => remove(r.id)}
             style={{
               background: "transparent",
@@ -1074,7 +1200,14 @@ function CircuitTab({ records, setRecords }) {
           </span>
         </div>
         <button
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => {
+            if (showForm) {
+              setShowForm(false);
+              setEditingId(null);
+            } else {
+              startAdd();
+            }
+          }}
           style={{
             background: showForm ? COLORS.surfaceRaised : COLORS.red,
             border: `1px solid ${showForm ? COLORS.border : COLORS.red}`,
@@ -1119,6 +1252,18 @@ function CircuitTab({ records, setRecords }) {
             marginBottom: 16,
           }}
         >
+          {editingId && (
+            <div
+              style={{
+                fontSize: 12,
+                color: COLORS.amber,
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              サーキット記録を編集中
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}>
               <Field label="日付">
@@ -1246,7 +1391,7 @@ function CircuitTab({ records, setRecords }) {
           </Field>
 
           <button
-            onClick={add}
+            onClick={save}
             style={{
               width: "100%",
               background: COLORS.red,
@@ -1264,7 +1409,7 @@ function CircuitTab({ records, setRecords }) {
             }}
           >
             <Plus size={16} />
-            保存する
+            {editingId ? "更新する" : "保存する"}
           </button>
         </div>
       )}
