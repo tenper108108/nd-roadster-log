@@ -100,6 +100,73 @@ const CUSTOM_CATEGORIES = [
   "その他",
 ];
 
+const CUSTOM_FIELD_DEFS = {
+  "足回り(サスペンション)": [
+    { key: "partType", label: "部品の種類", placeholder: "例: 車高調 / スプリング / スタビ" },
+    { key: "frontDrop", label: "車高ダウン量 フロント", placeholder: "例: 40mm" },
+    { key: "rearDrop", label: "車高ダウン量 リア", placeholder: "例: 40mm" },
+    { key: "frontDamping", label: "減衰 フロント", placeholder: "例: 13段" },
+    { key: "rearDamping", label: "減衰 リア", placeholder: "例: 14段" },
+    { key: "frontSpringRate", label: "バネレート フロント", placeholder: "例: 6kgf/mm" },
+    { key: "rearSpringRate", label: "バネレート リア", placeholder: "例: 4kgf/mm" },
+  ],
+  "エンジン/吸排気": [
+    { key: "partType", label: "部品の種類", placeholder: "例: マフラー / エアクリーナー" },
+    { key: "material", label: "材質", placeholder: "例: ステンレス / チタン" },
+    { key: "pipeDiameter", label: "パイプ径", placeholder: "例: φ60" },
+    { key: "tailDiameter", label: "出口径", placeholder: "例: φ90" },
+    { key: "powerChange", label: "出力・ECU設定", placeholder: "任意" },
+  ],
+  "ブレーキ": [
+    { key: "partType", label: "部品の種類", placeholder: "例: パッド / ローター / キャリパー" },
+    { key: "position", label: "装着位置", placeholder: "例: フロント / リア / 前後" },
+    { key: "padCompound", label: "パッド材・摩材", placeholder: "任意" },
+    { key: "rotorSize", label: "ローターサイズ", placeholder: "例: φ280" },
+    { key: "fluid", label: "フルード規格", placeholder: "例: DOT4" },
+  ],
+  "ホイール/タイヤ": [
+    { key: "partType", label: "部品の種類", placeholder: "例: ホイール / タイヤ / セット" },
+    { key: "wheelSize", label: "ホイール径", placeholder: "例: 16インチ" },
+    { key: "rimWidth", label: "リム幅", placeholder: "例: 7J" },
+    { key: "inset", label: "インセット", placeholder: "例: +35" },
+    { key: "tireName", label: "タイヤ銘柄", placeholder: "例: ADVAN Sport V105" },
+    { key: "tireSize", label: "タイヤサイズ", placeholder: "例: 195/50R16 84V" },
+    { key: "pressure", label: "基準空気圧", placeholder: "例: 200kPa" },
+  ],
+  "外装/エアロ": [
+    { key: "partType", label: "部品の種類", placeholder: "例: リップ / ウイング / ディフューザー" },
+    { key: "position", label: "装着位置", placeholder: "例: フロント / サイド / リア" },
+    { key: "material", label: "材質", placeholder: "例: FRP / カーボン / ABS" },
+    { key: "color", label: "色・仕上げ", placeholder: "例: ボディ同色 / 艶あり" },
+    { key: "mounting", label: "取付方法", placeholder: "例: ボルト固定 / 両面テープ" },
+  ],
+  "内装": [
+    { key: "partType", label: "部品の種類", placeholder: "例: シート / ステアリング / ペダル" },
+    { key: "position", label: "装着位置", placeholder: "例: 運転席 / 助手席" },
+    { key: "size", label: "サイズ", placeholder: "例: 350mm" },
+    { key: "material", label: "材質", placeholder: "例: レザー / アルミ" },
+    { key: "color", label: "色", placeholder: "例: ブラック / レッド" },
+  ],
+  "電装/オーディオ": [
+    { key: "partType", label: "部品の種類", placeholder: "例: ドラレコ / スピーカー" },
+    { key: "modelNumber", label: "型番", placeholder: "任意" },
+    { key: "position", label: "取付位置", placeholder: "任意" },
+    { key: "power", label: "電源・出力", placeholder: "例: ACC / 100W" },
+    { key: "connection", label: "接続方法", placeholder: "例: Bluetooth / USB" },
+  ],
+  "その他": [
+    { key: "partType", label: "部品の種類", placeholder: "任意" },
+    { key: "spec", label: "仕様・サイズ", placeholder: "任意" },
+    { key: "color", label: "色・仕上げ", placeholder: "任意" },
+    { key: "position", label: "取付位置", placeholder: "任意" },
+  ],
+};
+
+function customFieldLabel(category, key) {
+  const field = (CUSTOM_FIELD_DEFS[category] || []).find((item) => item.key === key);
+  return field ? field.label : key;
+}
+
 const MAINT_FIELD_DEFS = {
   "アライメント調整": [
     { key: "frontCamber", label: "前キャンバー（左 / 右）", placeholder: "例: -1°09′ / -1°11′" },
@@ -1682,6 +1749,7 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
     cost: "",
     memo: "",
     status: "active",
+    details: {},
   };
   const [form, setForm] = useState(blankForm);
   const [error, setError] = useState("");
@@ -1711,6 +1779,7 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
       cost: r.cost || "",
       memo: r.memo || "",
       status: r.status || "active",
+      details: { ...(r.details || {}) },
     });
     setEditingId(r.id);
     setError("");
@@ -1845,7 +1914,7 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
               <Field label="カテゴリー">
                 <select
                   value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  onChange={(e) => setForm({ ...form, category: e.target.value, details: {} })}
                   style={inputStyle}
                 >
                   {CUSTOM_CATEGORIES.map((c) => (
@@ -1898,6 +1967,22 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
               </Field>
             </div>
           </div>
+
+          {(CUSTOM_FIELD_DEFS[form.category] || []).length > 0 && (
+            <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: COLORS.amber, fontWeight: 700, marginBottom: 9 }}>仕様・セッティング</div>
+              {(CUSTOM_FIELD_DEFS[form.category] || []).map((field) => (
+                <Field key={field.key} label={field.label}>
+                  <input
+                    value={(form.details && form.details[field.key]) || ""}
+                    onChange={(e) => setForm({ ...form, details: { ...(form.details || {}), [field.key]: e.target.value } })}
+                    style={inputStyle}
+                    placeholder={field.placeholder}
+                  />
+                </Field>
+              ))}
+            </div>
+          )}
 
           <Field label="メモ">
             <input
@@ -2015,6 +2100,11 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
                       {r.memo}
                     </div>
                   )}
+                  {Object.entries(r.details || {}).filter(([, value]) => value).map(([key, value]) => (
+                    <div key={key} style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>
+                      {customFieldLabel(r.category, key)}: {value}
+                    </div>
+                  ))}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {r.cost && (
@@ -2239,6 +2329,9 @@ function MyRoadsterTab({ mileage, maintRecords, customRecords, oilRemain }) {
             <div>
               <div style={{ fontSize: 10, color: COLORS.textMuted }}>{r.category}</div>
               <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{r.brand ? `${r.brand} ${r.part}` : r.part}</div>
+              {detailLines(r.details).map(([key, value]) => (
+                <div key={key} style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>{customFieldLabel(r.category, key)}: {value}</div>
+              ))}
               {r.memo && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>{r.memo}</div>}
             </div>
             <ChevronRight size={16} color={COLORS.textMuted} />
@@ -2279,7 +2372,7 @@ function MyRoadsterTab({ mileage, maintRecords, customRecords, oilRemain }) {
                 <div style={{ fontSize: 11, color: index === 0 ? COLORS.amber : COLORS.textMuted }}>{index === 0 ? "最新 · " : ""}{fmtDate(entry.date)}</div>
                 <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>{entry.part || entry.category}</div>
                 {entry.brand && <div style={{ fontSize: 11, color: COLORS.textMuted }}>{entry.brand}</div>}
-                {detailLines(entry.details).map(([key, value]) => <div key={key} style={{ fontSize: 11, color: COLORS.textMuted }}>{maintFieldLabel(entry.category, key)}: {value}</div>)}
+                {detailLines(entry.details).map(([key, value]) => <div key={key} style={{ fontSize: 11, color: COLORS.textMuted }}>{entry.part ? customFieldLabel(entry.category, key) : maintFieldLabel(entry.category, key)}: {value}</div>)}
                 {entry.memo && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>{entry.memo}</div>}
               </div>
             ))}
