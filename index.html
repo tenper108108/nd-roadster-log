@@ -355,7 +355,7 @@ function AppTools({ oilInterval, setOilInterval, onExport, onImport }) {
   return (
     <div
       style={{
-        marginTop: 22,
+        marginTop: 0,
         padding: 14,
         background: COLORS.surface,
         border: `1px solid ${COLORS.border}`,
@@ -446,6 +446,12 @@ function TabBar({ tab, setTab }) {
         onClick={() => setTab("custom")}
         icon={<Settings size={15} />}
         label="カスタム"
+      />
+      <TabButton
+        active={tab === "mycar"}
+        onClick={() => setTab("mycar")}
+        icon={<Car size={15} />}
+        label="愛車"
       />
     </div>
   );
@@ -1675,6 +1681,7 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
     brand: "",
     cost: "",
     memo: "",
+    status: "active",
   };
   const [form, setForm] = useState(blankForm);
   const [error, setError] = useState("");
@@ -1703,6 +1710,7 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
       brand: r.brand || "",
       cost: r.cost || "",
       memo: r.memo || "",
+      status: r.status || "active",
     });
     setEditingId(r.id);
     setError("");
@@ -1746,6 +1754,7 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
     cat,
     items: sorted.filter((r) => r.category === cat),
   })).filter((g) => g.items.length > 0);
+  const activeRecords = records.filter((r) => (r.status || "active") === "active");
   const totalCost = records.reduce((s, r) => s + (Number(r.cost) || 0), 0);
 
   return (
@@ -1760,7 +1769,7 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
       >
         <div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>
-            {records.length}
+            {activeRecords.length}
             <span style={{ fontSize: 12, color: COLORS.textMuted, marginLeft: 4 }}>
               点装着中
             </span>
@@ -1899,6 +1908,18 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
             />
           </Field>
 
+          <Field label="現在の状態">
+            <select
+              value={form.status || "active"}
+              onChange={(e) => setForm({ ...form, status: e.target.value })}
+              style={inputStyle}
+            >
+              <option value="active">現在装着中</option>
+              <option value="removed">交換・取り外し済み</option>
+              <option value="history">履歴のみ（現在仕様に表示しない）</option>
+            </select>
+          </Field>
+
           <button
             onClick={save}
             style={{
@@ -1964,6 +1985,11 @@ function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
                   <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>
                     {r.part}
                   </div>
+                  {(r.status || "active") !== "active" && (
+                    <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 3 }}>
+                      {r.status === "removed" ? "取り外し済み" : "履歴のみ"}
+                    </div>
+                  )}
                   <div
                     style={{
                       fontSize: 12,
@@ -2147,6 +2173,123 @@ function ModPopup({ records, onClose, onSelect }) {
   );
 }
 
+function MyRoadsterTab({ mileage, maintRecords, customRecords, oilRemain }) {
+  const [history, setHistory] = useState(null);
+  const activeCustom = customRecords
+    .filter((r) => (r.status || "active") === "active")
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const maintEntries = [];
+  maintRecords.forEach((record) => {
+    const recordItems = record.items || (record.categories || [record.category])
+      .filter(Boolean).map((category) => ({ category, details: {} }));
+    recordItems.forEach((item) => maintEntries.push({
+      type: "maint",
+      category: item.category,
+      date: record.date || "",
+      mileage: record.mileage || "",
+      cost: record.cost || "",
+      memo: record.memo || "",
+      details: item.details || {},
+    }));
+  });
+  maintEntries.sort((a, b) => (a.date < b.date ? 1 : -1));
+  const latestMaint = [];
+  const seenCategories = new Set();
+  maintEntries.forEach((entry) => {
+    if (!seenCategories.has(entry.category)) {
+      seenCategories.add(entry.category);
+      latestMaint.push(entry);
+    }
+  });
+
+  const historyFor = (kind, category) => {
+    if (kind === "custom") {
+      return customRecords.filter((r) => r.category === category).sort((a, b) => (a.date < b.date ? 1 : -1));
+    }
+    return maintEntries.filter((r) => r.category === category);
+  };
+
+  const openHistory = (kind, category, title) => setHistory({
+    title,
+    entries: historyFor(kind, category),
+  });
+
+  const detailLines = (details) => Object.entries(details || {}).filter(([, value]) => value);
+
+  return (
+    <div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, letterSpacing: 2.2, color: COLORS.textMuted }}>MY ROADSTER</div>
+        <div style={{ fontSize: 22, fontWeight: 800, marginTop: 3 }}>現在仕様</div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+        <MiniStat label="総走行距離" value={`${Number(mileage || 0).toLocaleString()}km`} />
+        <MiniStat label="次回オイルまで" value={oilRemain === null ? "-" : `${Number(oilRemain).toLocaleString()}km`} warn={oilRemain !== null && oilRemain <= 500} />
+        <MiniStat label="装着カスタム" value={`${activeCustom.length}点`} />
+        <MiniStat label="最新整備項目" value={`${latestMaint.length}項目`} />
+      </div>
+
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.amber, marginBottom: 7 }}>CURRENT CUSTOM</div>
+      {activeCustom.length === 0 && <EmptyState text="現在装着中のカスタムはありません" />}
+      {activeCustom.map((r) => (
+        <button key={r.id} onClick={() => openHistory("custom", r.category, r.category)} style={{ width: "100%", textAlign: "left", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 12, marginBottom: 8, color: COLORS.text, cursor: "pointer" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted }}>{r.category}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{r.brand ? `${r.brand} ${r.part}` : r.part}</div>
+              {r.memo && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>{r.memo}</div>}
+            </div>
+            <ChevronRight size={16} color={COLORS.textMuted} />
+          </div>
+        </button>
+      ))}
+
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.amber, margin: "18px 0 7px" }}>LATEST MAINTENANCE</div>
+      {latestMaint.length === 0 && <EmptyState text="整備記録はまだありません" />}
+      {latestMaint.map((entry) => (
+        <button key={entry.category} onClick={() => openHistory("maint", entry.category, entry.category)} style={{ width: "100%", textAlign: "left", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 12, marginBottom: 8, color: COLORS.text, cursor: "pointer" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{entry.category}</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 3 }}>{fmtDate(entry.date)}{entry.mileage && ` · ${Number(entry.mileage).toLocaleString()}km`}</div>
+              {detailLines(entry.details).map(([key, value]) => (
+                <div key={key} style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>{maintFieldLabel(entry.category, key)}: {value}</div>
+              ))}
+            </div>
+            <ChevronRight size={16} color={COLORS.textMuted} />
+          </div>
+        </button>
+      ))}
+
+      <div style={{ fontSize: 10, lineHeight: 1.6, color: COLORS.textMuted, marginTop: 12 }}>
+        カスタムの「現在の状態」を変更すると、このページへ自動反映されます。各カードをタップすると履歴を確認できます。
+      </div>
+
+      {history && (
+        <div onClick={() => setHistory(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 110 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, maxHeight: "72vh", overflowY: "auto", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderBottom: "none", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: "16px 16px 28px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div><div style={{ fontSize: 10, color: COLORS.textMuted }}>HISTORY</div><div style={{ fontSize: 18, fontWeight: 800 }}>{history.title}</div></div>
+              <button onClick={() => setHistory(null)} style={{ background: "transparent", border: "none", color: COLORS.textMuted, padding: 6 }}><X size={20} /></button>
+            </div>
+            {history.entries.map((entry, index) => (
+              <div key={(entry.id || entry.date || "entry") + index} style={{ borderLeft: `2px solid ${index === 0 ? COLORS.red : COLORS.border}`, padding: "2px 0 12px 12px", marginLeft: 5 }}>
+                <div style={{ fontSize: 11, color: index === 0 ? COLORS.amber : COLORS.textMuted }}>{index === 0 ? "最新 · " : ""}{fmtDate(entry.date)}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>{entry.part || entry.category}</div>
+                {entry.brand && <div style={{ fontSize: 11, color: COLORS.textMuted }}>{entry.brand}</div>}
+                {detailLines(entry.details).map(([key, value]) => <div key={key} style={{ fontSize: 11, color: COLORS.textMuted }}>{maintFieldLabel(entry.category, key)}: {value}</div>)}
+                {entry.memo && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>{entry.memo}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MainApp() {
   const [tab, setTab] = useState("maint");
   const [loaded, setLoaded] = useState(false);
@@ -2157,6 +2300,7 @@ function MainApp() {
   const [oilInterval, setOilInterval] = useState(5000);
   const [syncStatus, setSyncStatus] = useState("同期確認中");
   const [showModPopup, setShowModPopup] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [highlightModId, setHighlightModId] = useState(null);
 
   useEffect(() => {
@@ -2302,20 +2446,20 @@ function MainApp() {
           oilRemain={oilRemain}
           totalCost={totalCost}
           trackDays={trackDays}
-          modCount={customRecords.length}
+          modCount={customRecords.filter((r) => (r.status || "active") === "active").length}
           onModClick={() => setShowModPopup(true)}
         />
 
-        <div
-          style={{
-            color: syncStatus === "同期済み" ? COLORS.green :
-              syncStatus === "同期失敗" ? "#e08585" : COLORS.textMuted,
-            fontSize: 11,
-            textAlign: "right",
-            margin: "-8px 2px 10px",
-          }}
-        >
-          ● {syncStatus}
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 9, margin: "-8px 2px 10px" }}>
+          <div style={{ color: syncStatus === "同期済み" ? COLORS.green : syncStatus === "同期失敗" ? "#e08585" : COLORS.textMuted, fontSize: 11 }}>
+            ● {syncStatus}
+          </div>
+          <button
+            onClick={() => setShowSettings(true)}
+            style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textMuted, padding: "4px 7px", fontSize: 11, cursor: "pointer" }}
+          >
+            <Settings size={12} /> 設定
+          </button>
         </div>
 
         <TabBar tab={tab} setTab={setTab} />
@@ -2338,13 +2482,15 @@ function MainApp() {
             onHighlightHandled={() => setHighlightModId(null)}
           />
         )}
+        {tab === "mycar" && (
+          <MyRoadsterTab
+            mileage={mileage}
+            maintRecords={maintRecords}
+            customRecords={customRecords}
+            oilRemain={oilRemain}
+          />
+        )}
 
-        <AppTools
-          oilInterval={oilInterval}
-          setOilInterval={setOilInterval}
-          onExport={exportBackup}
-          onImport={importBackup}
-        />
       </div>
 
       {showModPopup && (
@@ -2357,6 +2503,27 @@ function MainApp() {
             setShowModPopup(false);
           }}
         />
+      )}
+      {showSettings && (
+        <div onClick={() => setShowSettings(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 120 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderBottom: "none", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: "14px 16px 28px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1.5 }}>ROADSTER LOG</div>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>設定</div>
+              </div>
+              <button onClick={() => setShowSettings(false)} style={{ background: "transparent", border: "none", color: COLORS.textMuted, padding: 6, cursor: "pointer" }} aria-label="閉じる">
+                <X size={20} />
+              </button>
+            </div>
+            <AppTools
+              oilInterval={oilInterval}
+              setOilInterval={setOilInterval}
+              onExport={exportBackup}
+              onImport={importBackup}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2401,6 +2568,16 @@ function Gauge(p) {
       <circle cx="12" cy="12" r="9" />
       <path d="M12 12l4-4" />
       <path d="M12 4v1M4 12h1M12 20v-1M20 12h-1" />
+    </Icon>
+  );
+}
+function Car(p) {
+  return (
+    <Icon {...p}>
+      <path d="M5 17h14l1-5-3-5H7l-3 5 1 5z" />
+      <path d="M7 7 5.5 4.5M17 7l1.5-2.5M4 12h16" />
+      <circle cx="7" cy="17" r="2" />
+      <circle cx="17" cy="17" r="2" />
     </Icon>
   );
 }
