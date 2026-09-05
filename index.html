@@ -67,6 +67,7 @@ const COLORS = {
 };
 
 const MAINT_CATEGORIES = [
+  "アライメント調整",
   "エンジンオイル交換",
   "オイルフィルター交換",
   "タイヤ交換",
@@ -100,6 +101,17 @@ const CUSTOM_CATEGORIES = [
 ];
 
 const MAINT_FIELD_DEFS = {
+  "アライメント調整": [
+    { key: "frontCamber", label: "前キャンバー（左 / 右）", placeholder: "例: -1°09′ / -1°11′" },
+    { key: "frontCaster", label: "前キャスター（左 / 右）", placeholder: "例: 8°18′ / 8°10′" },
+    { key: "frontToe", label: "前トー（左 / 右）", placeholder: "例: 0°04′ / 0°04′" },
+    { key: "frontTotalToe", label: "前トータルトー", placeholder: "例: 0°08′" },
+    { key: "rearCamber", label: "後キャンバー（左 / 右）", placeholder: "例: -1°50′ / -1°50′" },
+    { key: "rearToe", label: "後トー（左 / 右）", placeholder: "例: 0°07′ / 0°07′" },
+    { key: "rearTotalToe", label: "後トータルトー", placeholder: "例: 0°14′" },
+    { key: "thrustAngle", label: "スラスト角", placeholder: "例: 0°00′" },
+    { key: "before", label: "調整前（要約）", placeholder: "AI読取時に自動入力" },
+  ],
   "エンジンオイル交換": [
     { key: "oilType", label: "オイルの種類", placeholder: "例: 5W-30 化学合成油" },
     { key: "amount", label: "交換量", placeholder: "例: 3.2L" },
@@ -524,6 +536,8 @@ function MaintTab({ records, setRecords, mileage }) {
   const [editingId, setEditingId] = useState(null);
   const [editingItemIndex, setEditingItemIndex] = useState(null);
   const [selectedYear, setSelectedYear] = useState("all");
+  const [photoStatus, setPhotoStatus] = useState("");
+  const [photoWarnings, setPhotoWarnings] = useState([]);
 
   const resetAll = () => {
     setMeta({ ...blankMeta, mileage: mileage || "" });
@@ -534,6 +548,50 @@ function MaintTab({ records, setRecords, mileage }) {
     setError("");
     setEditingId(null);
     setEditingItemIndex(null);
+    setPhotoStatus("");
+    setPhotoWarnings([]);
+  };
+
+  const readPhoto = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      setError("");
+      setPhotoWarnings([]);
+      setPhotoStatus("写真を準備中…");
+      const prepared = await preparePhotoForAi(file);
+      setPhotoStatus("AIが読み取り中…（少し時間がかかります）");
+      const result = await analyzeMaintenancePhoto(prepared.data, prepared.mimeType);
+      const draft = result && result.draft;
+      if (!draft) throw new Error("読み取り結果が空でした");
+      setMeta((prev) => ({
+        ...prev,
+        date: draft.date || prev.date,
+        mileage: draft.mileage === null || draft.mileage === undefined ? prev.mileage : String(draft.mileage),
+        cost: draft.cost === null || draft.cost === undefined ? prev.cost : String(draft.cost),
+        memo: draft.memo || prev.memo,
+      }));
+      const aiItems = (draft.items || []).filter((item) => item && item.category).map((item) => ({
+        category: item.category,
+        details: Array.isArray(item.details)
+          ? item.details.reduce((obj, detail) => {
+              if (detail && detail.key && detail.value) obj[detail.key] = detail.value;
+              return obj;
+            }, {})
+          : { ...(item.details || {}) },
+      }));
+      if (aiItems.length) setItems(aiItems);
+      setCurrentCategory("");
+      setCurrentDetails({});
+      setCurrentCustomName("");
+      setEditingItemIndex(null);
+      setPhotoWarnings(result.warnings || []);
+      setPhotoStatus("読み取り完了。内容を確認してから保存してください");
+    } catch (err) {
+      setPhotoStatus("");
+      setError("写真を読み取れませんでした：" + (err.message || err));
+    }
   };
 
   const startEdit = (record) => {
@@ -723,6 +781,16 @@ function MaintTab({ records, setRecords, mileage }) {
               整備記録を編集中
             </div>
           )}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, border: `1px solid ${COLORS.amber}`, color: COLORS.amber, background: COLORS.bg, borderRadius: 7, padding: "10px 8px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              📷 写真から自動入力
+              <input type="file" accept="image/*" capture="environment" onChange={readPhoto} style={{ display: "none" }} />
+            </label>
+            {photoStatus && <div style={{ color: COLORS.green, fontSize: 11, marginTop: 6 }}>{photoStatus}</div>}
+            {photoWarnings.map((warning, index) => (
+              <div key={index} style={{ color: COLORS.amber, fontSize: 11, marginTop: 3 }}>⚠ {warning}</div>
+            ))}
+          </div>
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}>
               <Field label="日付">
@@ -2557,7 +2625,8 @@ function postToGas(params) {
     const form = document.createElement("form");
     let submitted = false;
     let submittedAt = 0;
-    const timer = setTimeout(() => cleanup(new Error("同期送信がタイムアウトしました")), 15000);
+    const timeoutMs = params.action === "analyzePhoto" ? 90000 : 15000;
+    const timer = setTimeout(() => cleanup(new Error(params.action === "analyzePhoto" ? "AI読取がタイムアウトしました" : "同期送信がタイムアウトしました")), timeoutMs);
 
     function cleanup(err) {
       clearTimeout(timer);
@@ -2594,6 +2663,63 @@ function postToGas(params) {
     submittedAt = Date.now();
     form.submit();
   });
+}
+
+function jsonpRequest(url, params) {
+  return new Promise((resolve, reject) => {
+    const cb = "__ndReq_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    const script = document.createElement("script");
+    const timer = setTimeout(() => cleanup(new Error("AI読取の確認がタイムアウトしました")), 15000);
+    function cleanup(err, value) {
+      clearTimeout(timer);
+      try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+      if (script.parentNode) script.parentNode.removeChild(script);
+      err ? reject(err) : resolve(value);
+    }
+    window[cb] = (result) => cleanup(null, result);
+    script.onerror = () => cleanup(new Error("同期サーバーへ接続できませんでした"));
+    const query = new URLSearchParams({ ...params, callback: cb, _: String(Date.now()) });
+    script.src = url + (url.includes("?") ? "&" : "?") + query.toString();
+    document.head.appendChild(script);
+  });
+}
+
+function preparePhotoForAi(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) return reject(new Error("画像ファイルを選んでください"));
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        const maxSide = 1600;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+        resolve({ mimeType: "image/jpeg", data: dataUrl.split(",")[1] });
+      } catch (err) { reject(err); }
+      finally { URL.revokeObjectURL(objectUrl); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("画像を開けませんでした")); };
+    img.src = objectUrl;
+  });
+}
+
+async function analyzeMaintenancePhoto(imageData, mimeType) {
+  const cfg = getApiConfig();
+  if (!cfg.url || !cfg.key) throw new Error("先に同期設定が必要です");
+  const requestId = "photo_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  await postToGas({ action: "analyzePhoto", requestId, imageData, mimeType });
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 90000) {
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const result = await jsonpRequest(cfg.url, { action: "analysisResult", requestId, syncKey: cfg.key });
+    if (result && result.status === "done") return result.result;
+    if (result && result.status === "error") throw new Error(result.error || "AI読取に失敗しました");
+  }
+  throw new Error("AI読取がタイムアウトしました");
 }
 
 function hasMeaningfulData(data) {
