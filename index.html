@@ -506,7 +506,7 @@ function TabBar({ tab, setTab }) {
         active={tab === "circuit"}
         onClick={() => setTab("circuit")}
         icon={<Flag size={15} />}
-        label="サーキット"
+        label="走行"
       />
       <TabButton
         active={tab === "custom"}
@@ -1740,6 +1740,64 @@ function ViewModeButton({ active, onClick, label }) {
   );
 }
 
+function DriveTab({ records, setRecords }) {
+  const blank = { date: new Date().toISOString().slice(0, 10), title: "", destination: "", distance: "", stops: "", weather: "晴れ", rating: "5", mapUrl: "", memo: "", photo: "" };
+  const [form, setForm] = useState(blank);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState("");
+  const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const save = () => {
+    if (!form.title.trim()) return setError("ドライブのタイトルを入力してください");
+    if (form.distance !== "" && Number(form.distance) < 0) return setError("走行距離は0以上で入力してください");
+    if (editingId) setRecords(records.map((record) => record.id === editingId ? { ...record, ...form } : record));
+    else setRecords([{ id: uid(), ...form }, ...records]);
+    setForm(blank); setEditingId(null); setShowForm(false); setError("");
+  };
+  const edit = (record) => { setForm({ ...blank, ...record }); setEditingId(record.id); setShowForm(true); setError(""); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const remove = (id) => { if (window.confirm("このドライブ記録を削除しますか？")) setRecords(records.filter((record) => record.id !== id)); };
+  const selectPhoto = async (event) => {
+    const file = event.target.files && event.target.files[0]; event.target.value = ""; if (!file) return;
+    try { const image = await preparePhotoForAi(file, 900, 0.68); setForm((current) => ({ ...current, photo: `data:${image.mimeType};base64,${image.data}` })); }
+    catch (err) { setError("写真を読み込めませんでした"); }
+  };
+
+  return <div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={{ fontSize: 20, fontWeight: 700 }}>{records.length}<span style={{ fontSize: 12, color: COLORS.textMuted, marginLeft: 4 }}>回のドライブ</span></div>
+      <button onClick={() => { setShowForm(!showForm); setEditingId(null); setForm(blank); }} style={{ ...secondaryButtonStyle, background: showForm ? COLORS.surfaceRaised : COLORS.red, borderColor: showForm ? COLORS.border : COLORS.red }}>＋ 記録を追加</button>
+    </div>
+    {showForm && <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 13, marginBottom: 14 }}>
+      <Field label="日付"><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle}/></Field>
+      <Field label="ドライブのタイトル"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} style={inputStyle} placeholder="例: せせらぎ街道・高山ドライブ"/></Field>
+      <Field label="目的地"><input value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} style={inputStyle} placeholder="例: 高山市"/></Field>
+      <div style={{ display: "flex", gap: 8 }}><div style={{ flex: 1 }}><Field label="走行距離 (km)"><input type="number" value={form.distance} onChange={(e) => setForm({ ...form, distance: e.target.value })} style={inputStyle}/></Field></div><div style={{ flex: 1 }}><Field label="天候"><select value={form.weather} onChange={(e) => setForm({ ...form, weather: e.target.value })} style={inputStyle}>{["晴れ","曇り","雨","雪","変わりやすい"].map((value) => <option key={value}>{value}</option>)}</select></Field></div></div>
+      <Field label="立ち寄った場所"><input value={form.stops} onChange={(e) => setForm({ ...form, stops: e.target.value })} style={inputStyle} placeholder="例: Eat Books、古い町並み"/></Field>
+      <Field label="お気に入り度"><select value={form.rating} onChange={(e) => setForm({ ...form, rating: e.target.value })} style={inputStyle}>{[5,4,3,2,1].map((value) => <option key={value} value={value}>{"★".repeat(value)}</option>)}</select></Field>
+      <Field label="GoogleマップのルートURL"><input type="url" value={form.mapUrl} onChange={(e) => setForm({ ...form, mapUrl: e.target.value })} style={inputStyle} placeholder="任意"/></Field>
+      <Field label="感想・思い出"><input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} style={inputStyle} placeholder="任意"/></Field>
+      <label style={{ ...secondaryButtonStyle, display: "block", textAlign: "center", marginBottom: 10 }}>📷 思い出の写真を選ぶ<input type="file" accept="image/*" onChange={selectPhoto} hidden/></label>
+      {form.photo && <img src={form.photo} alt="ドライブ写真" style={{ width: "100%", maxHeight: 210, objectFit: "cover", borderRadius: 8, marginBottom: 10 }}/>} 
+      {error && <div style={{ color: "#e08585", fontSize: 12, marginBottom: 8 }}>{error}</div>}
+      <button onClick={save} style={{ ...secondaryButtonStyle, width: "100%", background: COLORS.red, borderColor: COLORS.red }}>{editingId ? "更新する" : "保存する"}</button>
+    </div>}
+    {sorted.length === 0 && <EmptyState text="ドライブ記録はまだありません"/>}
+    {sorted.map((record) => <div key={record.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 10 }}>
+      {record.photo && <img src={record.photo} alt="ドライブ写真" style={{ width: "100%", height: 170, objectFit: "cover", display: "block" }}/>} 
+      <div style={{ padding: 12 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><div><div style={{ fontSize: 11, color: COLORS.textMuted }}>{fmtDate(record.date)} · {record.weather}</div><div style={{ fontSize: 15, fontWeight: 800, marginTop: 3 }}>{record.title}</div></div><div style={{ color: COLORS.amber, fontSize: 11 }}>{"★".repeat(Number(record.rating) || 0)}</div></div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 7 }}>{record.destination && `目的地：${record.destination}`}{record.distance && ` · ${Number(record.distance).toLocaleString()}km`}</div>
+      {record.stops && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>立ち寄り：{record.stops}</div>}{record.memo && <div style={{ fontSize: 12, marginTop: 7 }}>{record.memo}</div>}
+      <div style={{ display: "flex", gap: 7, justifyContent: "flex-end", marginTop: 9 }}>{record.mapUrl && <a href={record.mapUrl} target="_blank" rel="noopener noreferrer" style={{ ...secondaryButtonStyle, textDecoration: "none", padding: "4px 8px", fontSize: 10 }}>地図</a>}<button onClick={() => edit(record)} style={{ ...secondaryButtonStyle, padding: "4px 8px", fontSize: 10 }}>編集</button><button onClick={() => remove(record.id)} style={{ background: "transparent", border: "none", color: COLORS.textMuted }}><Trash2 size={14}/></button></div></div>
+    </div>)}
+  </div>;
+}
+
+function RunTab({ driveRecords, setDriveRecords, circuitRecords, setCircuitRecords }) {
+  const [mode, setMode] = useState("drive");
+  return <div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}><ViewModeButton active={mode === "drive"} onClick={() => setMode("drive")} label="ドライブ"/><ViewModeButton active={mode === "circuit"} onClick={() => setMode("circuit")} label="サーキット"/></div>{mode === "drive" ? <DriveTab records={driveRecords} setRecords={setDriveRecords}/> : <CircuitTab records={circuitRecords} setRecords={setCircuitRecords}/>}</div>;
+}
+
 function CustomTab({ records, setRecords, highlightId, onHighlightHandled }) {
   const blankForm = {
     date: new Date().toISOString().slice(0, 10),
@@ -2452,6 +2510,7 @@ function MainApp() {
   const [mileage, setMileage] = useState(0);
   const [maintRecords, setMaintRecords] = useState([]);
   const [circuitRecords, setCircuitRecords] = useState([]);
+  const [driveRecords, setDriveRecords] = useState([]);
   const [customRecords, setCustomRecords] = useState([]);
   const [oilInterval, setOilInterval] = useState(5000);
   const [reminders, setReminders] = useState([]);
@@ -2483,6 +2542,7 @@ function MainApp() {
       setMileage(Math.max(Number(data["nd-mileage"]) || 0, highestRecordedMileage));
       setMaintRecords(loadedMaintRecords);
       setCircuitRecords(data["nd-circuit-records"] || []);
+      setDriveRecords(data["nd-drive-records"] || []);
       setCustomRecords(data["nd-custom-records"] || []);
       setOilInterval(Number(data["nd-oil-interval"]) || 5000);
       setReminders(data["nd-maint-reminders"] || []);
@@ -2519,6 +2579,7 @@ function MainApp() {
     if (!loaded) return;
     saveAppValue("nd-circuit-records", circuitRecords);
   }, [circuitRecords, loaded]);
+  useEffect(() => { if (loaded) saveAppValue("nd-drive-records", driveRecords); }, [driveRecords, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -2545,7 +2606,7 @@ function MainApp() {
   const oilRemain = oilDueAt !== null ? oilDueAt - mileage : null;
 
   const totalCost = maintRecords.reduce((s, r) => s + (Number(r.cost) || 0), 0);
-  const trackDays = circuitRecords.length;
+  const trackDays = circuitRecords.length + driveRecords.length;
 
   const exportBackup = () => {
     const backup = {
@@ -2555,6 +2616,7 @@ function MainApp() {
         "nd-mileage": mileage,
         "nd-maint-records": maintRecords,
         "nd-circuit-records": circuitRecords,
+        "nd-drive-records": driveRecords,
         "nd-custom-records": customRecords,
         "nd-oil-interval": oilInterval,
         "nd-maint-reminders": reminders,
@@ -2588,6 +2650,7 @@ function MainApp() {
       setMileage(Number(data["nd-mileage"]) || 0);
       setMaintRecords(maint);
       setCircuitRecords(circuit);
+      setDriveRecords(Array.isArray(data["nd-drive-records"]) ? data["nd-drive-records"] : []);
       setCustomRecords(custom);
       setOilInterval(Number(data["nd-oil-interval"]) || 5000);
       setReminders(Array.isArray(data["nd-maint-reminders"]) ? data["nd-maint-reminders"] : []);
@@ -2643,7 +2706,7 @@ function MainApp() {
           />
         )}
         {tab === "circuit" && (
-          <CircuitTab records={circuitRecords} setRecords={setCircuitRecords} />
+          <RunTab driveRecords={driveRecords} setDriveRecords={setDriveRecords} circuitRecords={circuitRecords} setCircuitRecords={setCircuitRecords} />
         )}
         {tab === "custom" && (
           <CustomTab
@@ -2854,6 +2917,7 @@ const STORAGE_KEYS = [
   "nd-mileage",
   "nd-maint-records",
   "nd-circuit-records",
+  "nd-drive-records",
   "nd-custom-records",
   "nd-oil-interval",
   "nd-maint-reminders",
@@ -2898,6 +2962,7 @@ function getLocalSnapshot() {
     "nd-mileage": Number(localStorage.getItem("nd-mileage")) || 0,
     "nd-maint-records": loadJSON("nd-maint-records", []),
     "nd-circuit-records": loadJSON("nd-circuit-records", []),
+    "nd-drive-records": loadJSON("nd-drive-records", []),
     "nd-custom-records": loadJSON("nd-custom-records", []),
     "nd-oil-interval": Number(localStorage.getItem("nd-oil-interval")) || 5000,
     "nd-maint-reminders": loadJSON("nd-maint-reminders", []),
@@ -3045,20 +3110,20 @@ function jsonpRequest(url, params) {
   });
 }
 
-function preparePhotoForAi(file) {
+function preparePhotoForAi(file, requestedMaxSide, requestedQuality) {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith("image/")) return reject(new Error("画像ファイルを選んでください"));
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
       try {
-        const maxSide = 1600;
+        const maxSide = requestedMaxSide || 1600;
         const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(img.width * scale));
         canvas.height = Math.max(1, Math.round(img.height * scale));
         canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+        const dataUrl = canvas.toDataURL("image/jpeg", requestedQuality || 0.78);
         resolve({ mimeType: "image/jpeg", data: dataUrl.split(",")[1] });
       } catch (err) { reject(err); }
       finally { URL.revokeObjectURL(objectUrl); }
