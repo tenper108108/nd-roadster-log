@@ -2263,122 +2263,100 @@ function ModPopup({ records, onClose, onSelect }) {
   );
 }
 
-function MyRoadsterTab({ mileage, maintRecords, customRecords, oilRemain }) {
-  const [history, setHistory] = useState(null);
+function MyRoadsterTab({ mileage, maintRecords, customRecords, oilRemain, onGo }) {
   const activeCustom = customRecords
-    .filter((r) => (r.status || "active") === "active")
+    .filter((record) => (record.status || "active") === "active")
     .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const groupedSpecs = CUSTOM_CATEGORIES.map((category) => ({
+    category,
+    records: activeCustom.filter((record) => record.category === category),
+  })).filter((group) => group.records.length > 0);
+
+  const mergedDetails = (category) => activeCustom
+    .filter((record) => record.category === category)
+    .reduce((result, record) => ({ ...result, ...(record.details || {}) }), {});
+  const suspension = mergedDetails("足回り(サスペンション)");
+  const wheels = mergedDetails("ホイール/タイヤ");
 
   const maintEntries = [];
   maintRecords.forEach((record) => {
-    const recordItems = record.items || (record.categories || [record.category])
+    const items = record.items || (record.categories || [record.category])
       .filter(Boolean).map((category) => ({ category, details: {} }));
-    recordItems.forEach((item) => maintEntries.push({
-      type: "maint",
+    items.forEach((item) => maintEntries.push({
       category: item.category,
+      details: item.details || {},
       date: record.date || "",
       mileage: record.mileage || "",
-      cost: record.cost || "",
-      memo: record.memo || "",
-      details: item.details || {},
     }));
   });
   maintEntries.sort((a, b) => (a.date < b.date ? 1 : -1));
-  const latestMaint = [];
-  const seenCategories = new Set();
-  maintEntries.forEach((entry) => {
-    if (!seenCategories.has(entry.category)) {
-      seenCategories.add(entry.category);
-      latestMaint.push(entry);
-    }
-  });
+  const alignment = maintEntries.find((entry) => entry.category === "アライメント調整");
+  const lastOil = maintEntries.find((entry) => entry.category === "エンジンオイル交換");
+  const latestMaintDate = maintEntries[0] && maintEntries[0].date;
 
-  const historyFor = (kind, category) => {
-    if (kind === "custom") {
-      return customRecords.filter((r) => r.category === category).sort((a, b) => (a.date < b.date ? 1 : -1));
-    }
-    return maintEntries.filter((r) => r.category === category);
-  };
+  const setupRows = [
+    ["車高", suspension.frontDrop || suspension.rearDrop ? `F ${suspension.frontDrop || "-"} / R ${suspension.rearDrop || "-"}` : ""],
+    ["減衰", suspension.frontDamping || suspension.rearDamping ? `F ${suspension.frontDamping || "-"} / R ${suspension.rearDamping || "-"}` : ""],
+    ["バネレート", suspension.frontSpringRate || suspension.rearSpringRate ? `F ${suspension.frontSpringRate || "-"} / R ${suspension.rearSpringRate || "-"}` : ""],
+    ["基準空気圧", wheels.pressure || ""],
+    ["前キャンバー", alignment && alignment.details.frontCamber],
+    ["前キャスター", alignment && alignment.details.frontCaster],
+    ["前トー", alignment && alignment.details.frontToe],
+    ["後キャンバー", alignment && alignment.details.rearCamber],
+    ["後トー", alignment && alignment.details.rearToe],
+    ["スラスト角", alignment && alignment.details.thrustAngle],
+  ].filter(([, value]) => value);
 
-  const openHistory = (kind, category, title) => setHistory({
-    title,
-    entries: historyFor(kind, category),
-  });
-
-  const detailLines = (details) => Object.entries(details || {}).filter(([, value]) => value);
+  const sectionStyle = { background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 13, marginBottom: 14 };
 
   return (
     <div>
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 11, letterSpacing: 2.2, color: COLORS.textMuted }}>MY ROADSTER</div>
         <div style={{ fontSize: 22, fontWeight: 800, marginTop: 3 }}>現在仕様</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>今の車両状態だけをまとめたスペックシート</div>
       </div>
 
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.amber, marginBottom: 7 }}>CONDITION</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
         <MiniStat label="総走行距離" value={`${Number(mileage || 0).toLocaleString()}km`} />
         <MiniStat label="次回オイルまで" value={oilRemain === null ? "-" : `${Number(oilRemain).toLocaleString()}km`} warn={oilRemain !== null && oilRemain <= 500} />
-        <MiniStat label="装着カスタム" value={`${activeCustom.length}点`} />
-        <MiniStat label="最新整備項目" value={`${latestMaint.length}項目`} />
+        <MiniStat label="最終オイル交換" value={lastOil ? fmtDate(lastOil.date) : "-"} />
+        <MiniStat label="最終整備" value={latestMaintDate ? fmtDate(latestMaintDate) : "-"} />
       </div>
 
-      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.amber, marginBottom: 7 }}>CURRENT CUSTOM</div>
-      {activeCustom.length === 0 && <EmptyState text="現在装着中のカスタムはありません" />}
-      {activeCustom.map((r) => (
-        <button key={r.id} onClick={() => openHistory("custom", r.category, r.category)} style={{ width: "100%", textAlign: "left", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 12, marginBottom: 8, color: COLORS.text, cursor: "pointer" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-            <div>
-              <div style={{ fontSize: 10, color: COLORS.textMuted }}>{r.category}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{r.brand ? `${r.brand} ${r.part}` : r.part}</div>
-              {detailLines(r.details).map(([key, value]) => (
-                <div key={key} style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>{customFieldLabel(r.category, key)}: {value}</div>
-              ))}
-              {r.memo && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>{r.memo}</div>}
-            </div>
-            <ChevronRight size={16} color={COLORS.textMuted} />
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.amber, marginBottom: 7 }}>SETUP NOW</div>
+      <div style={sectionStyle}>
+        {setupRows.length === 0 && <div style={{ fontSize: 12, color: COLORS.textMuted }}>カスタムやアライメントの詳細を入力すると表示されます</div>}
+        {setupRows.map(([label, value], index) => (
+          <div key={label} style={{ display: "grid", gridTemplateColumns: "105px 1fr", gap: 8, padding: "8px 0", borderBottom: index < setupRows.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+            <div style={{ fontSize: 11, color: COLORS.textMuted }}>{label}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, textAlign: "right" }}>{value}</div>
           </div>
-        </button>
-      ))}
-
-      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.amber, margin: "18px 0 7px" }}>LATEST MAINTENANCE</div>
-      {latestMaint.length === 0 && <EmptyState text="整備記録はまだありません" />}
-      {latestMaint.map((entry) => (
-        <button key={entry.category} onClick={() => openHistory("maint", entry.category, entry.category)} style={{ width: "100%", textAlign: "left", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 12, marginBottom: 8, color: COLORS.text, cursor: "pointer" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700 }}>{entry.category}</div>
-              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 3 }}>{fmtDate(entry.date)}{entry.mileage && ` · ${Number(entry.mileage).toLocaleString()}km`}</div>
-              {detailLines(entry.details).map(([key, value]) => (
-                <div key={key} style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>{maintFieldLabel(entry.category, key)}: {value}</div>
-              ))}
-            </div>
-            <ChevronRight size={16} color={COLORS.textMuted} />
-          </div>
-        </button>
-      ))}
-
-      <div style={{ fontSize: 10, lineHeight: 1.6, color: COLORS.textMuted, marginTop: 12 }}>
-        カスタムの「現在の状態」を変更すると、このページへ自動反映されます。各カードをタップすると履歴を確認できます。
+        ))}
+        {alignment && <div style={{ fontSize: 10, color: COLORS.textMuted, textAlign: "right", marginTop: 7 }}>アライメント更新：{fmtDate(alignment.date)}</div>}
       </div>
 
-      {history && (
-        <div onClick={() => setHistory(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 110 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, maxHeight: "72vh", overflowY: "auto", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderBottom: "none", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: "16px 16px 28px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div><div style={{ fontSize: 10, color: COLORS.textMuted }}>HISTORY</div><div style={{ fontSize: 18, fontWeight: 800 }}>{history.title}</div></div>
-              <button onClick={() => setHistory(null)} style={{ background: "transparent", border: "none", color: COLORS.textMuted, padding: 6 }}><X size={20} /></button>
-            </div>
-            {history.entries.map((entry, index) => (
-              <div key={(entry.id || entry.date || "entry") + index} style={{ borderLeft: `2px solid ${index === 0 ? COLORS.red : COLORS.border}`, padding: "2px 0 12px 12px", marginLeft: 5 }}>
-                <div style={{ fontSize: 11, color: index === 0 ? COLORS.amber : COLORS.textMuted }}>{index === 0 ? "最新 · " : ""}{fmtDate(entry.date)}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>{entry.part || entry.category}</div>
-                {entry.brand && <div style={{ fontSize: 11, color: COLORS.textMuted }}>{entry.brand}</div>}
-                {detailLines(entry.details).map(([key, value]) => <div key={key} style={{ fontSize: 11, color: COLORS.textMuted }}>{entry.part ? customFieldLabel(entry.category, key) : maintFieldLabel(entry.category, key)}: {value}</div>)}
-                {entry.memo && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>{entry.memo}</div>}
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.amber, marginBottom: 7 }}>BUILD SHEET</div>
+      <div style={sectionStyle}>
+        {groupedSpecs.length === 0 && <div style={{ fontSize: 12, color: COLORS.textMuted }}>現在装着中のカスタムはありません</div>}
+        {groupedSpecs.map((group, index) => (
+          <div key={group.category} style={{ padding: "9px 0", borderBottom: index < groupedSpecs.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+            <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 4 }}>{group.category}</div>
+            {group.records.map((record) => (
+              <div key={record.id} style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.5 }}>
+                {record.brand ? `${record.brand} ` : ""}{record.part}
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <button onClick={() => onGo("maint")} style={secondaryButtonStyle}>整備履歴を見る</button>
+        <button onClick={() => onGo("custom")} style={secondaryButtonStyle}>カスタム履歴を見る</button>
+      </div>
     </div>
   );
 }
@@ -2581,6 +2559,7 @@ function MainApp() {
             maintRecords={maintRecords}
             customRecords={customRecords}
             oilRemain={oilRemain}
+            onGo={setTab}
           />
         )}
 
