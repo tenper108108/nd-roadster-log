@@ -2263,7 +2263,51 @@ function ModPopup({ records, onClose, onSelect }) {
   );
 }
 
-function MyRoadsterTab({ mileage, maintRecords, customRecords, oilRemain, onGo }) {
+function PlannerPanel({ title, records, setRecords, fields, renderSummary, activeMode }) {
+  const emptyForm = fields.reduce((obj, field) => ({ ...obj, [field.key]: field.defaultValue || "" }), {});
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+
+  const save = () => {
+    if (!String(form[fields[0].key] || "").trim()) return;
+    if (editingId) setRecords(records.map((record) => record.id === editingId ? { ...record, ...form } : record));
+    else setRecords([{ id: uid(), ...form }, ...records]);
+    setForm(emptyForm); setEditingId(null); setOpen(false);
+  };
+  const edit = (record) => { setForm(fields.reduce((obj, field) => ({ ...obj, [field.key]: record[field.key] || field.defaultValue || "" }), {})); setEditingId(record.id); setOpen(true); };
+  const remove = (id) => { if (window.confirm("この項目を削除しますか？")) setRecords(records.filter((record) => record.id !== id)); };
+  const activate = (id) => setRecords(records.map((record) => ({ ...record, active: record.id === id })));
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 13, fontWeight: 800 }}>{title}</div>
+        <button onClick={() => { setOpen(!open); setEditingId(null); setForm(emptyForm); }} style={{ background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.text, padding: "4px 8px", fontSize: 11 }}>＋追加</button>
+      </div>
+      {open && <div style={{ background: COLORS.bg, borderRadius: 8, padding: 10, marginTop: 10 }}>
+        {fields.map((field) => <Field key={field.key} label={field.label}>
+          {field.options ? <select value={form[field.key] || ""} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })} style={inputStyle}>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> :
+          <input type={field.type || "text"} value={form[field.key] || ""} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })} style={inputStyle} placeholder={field.placeholder || ""} />}
+        </Field>)}
+        <button onClick={save} style={{ ...secondaryButtonStyle, width: "100%", background: COLORS.red, borderColor: COLORS.red }}>{editingId ? "更新する" : "保存する"}</button>
+      </div>}
+      {records.length === 0 && !open && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>まだ登録されていません</div>}
+      {records.map((record) => <div key={record.id} style={{ borderTop: `1px solid ${COLORS.border}`, paddingTop: 9, marginTop: 9 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ fontSize: 12, lineHeight: 1.55 }}>{renderSummary(record)}{record.active && <span style={{ color: COLORS.amber, marginLeft: 6 }}>●使用中</span>}</div>
+          <div style={{ display: "flex", gap: 5, alignItems: "flex-start" }}>
+            {activeMode && !record.active && <button onClick={() => activate(record.id)} style={{ ...secondaryButtonStyle, padding: "3px 6px", fontSize: 10 }}>使用</button>}
+            <button onClick={() => edit(record)} style={{ ...secondaryButtonStyle, padding: "3px 6px", fontSize: 10 }}>編集</button>
+            <button onClick={() => remove(record.id)} style={{ background: "transparent", border: "none", color: COLORS.textMuted, padding: 3 }}><Trash2 size={13} /></button>
+          </div>
+        </div>
+      </div>)}
+    </div>
+  );
+}
+
+function MyRoadsterTab({ mileage, maintRecords, customRecords, oilRemain, onGo, reminders, setReminders, presets, setPresets, wishlist, setWishlist }) {
   const activeCustom = customRecords
     .filter((record) => (record.status || "active") === "active")
     .sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -2353,6 +2397,47 @@ function MyRoadsterTab({ mileage, maintRecords, customRecords, oilRemain, onGo }
         ))}
       </div>
 
+      <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.amber, margin: "18px 0 7px" }}>PLAN & SETTING</div>
+      <PlannerPanel
+        title="次回メンテナンス"
+        records={reminders}
+        setRecords={setReminders}
+        fields={[
+          { key: "title", label: "項目", placeholder: "例: ブレーキフルード交換" },
+          { key: "dueMileage", label: "予定走行距離 (km)", type: "number", placeholder: "例: 20000" },
+          { key: "dueDate", label: "予定日", type: "date" },
+          { key: "memo", label: "メモ", placeholder: "任意" },
+        ]}
+        renderSummary={(record) => <><strong>{record.title}</strong><br/><span style={{ color: COLORS.textMuted }}>{record.dueMileage ? `${Number(record.dueMileage).toLocaleString()}km` : ""}{record.dueMileage && record.dueDate ? " / " : ""}{record.dueDate ? fmtDate(record.dueDate) : ""}{record.memo ? ` · ${record.memo}` : ""}</span></>}
+      />
+      <PlannerPanel
+        title="セッティングプリセット"
+        records={presets}
+        setRecords={setPresets}
+        activeMode
+        fields={[
+          { key: "name", label: "プリセット名", placeholder: "例: 街乗り" },
+          { key: "frontDamping", label: "減衰 フロント", placeholder: "例: 13" },
+          { key: "rearDamping", label: "減衰 リア", placeholder: "例: 14" },
+          { key: "pressure", label: "空気圧", placeholder: "例: 200kPa" },
+          { key: "memo", label: "走った感想・メモ", placeholder: "任意" },
+        ]}
+        renderSummary={(record) => <><strong>{record.name}</strong><br/><span style={{ color: COLORS.textMuted }}>減衰 F{record.frontDamping || "-"} / R{record.rearDamping || "-"}{record.pressure ? ` · ${record.pressure}` : ""}{record.memo ? ` · ${record.memo}` : ""}</span></>}
+      />
+      <PlannerPanel
+        title="カスタム計画"
+        records={wishlist}
+        setRecords={setWishlist}
+        fields={[
+          { key: "part", label: "欲しいパーツ・作業", placeholder: "例: ATSカーボンクラッチ" },
+          { key: "category", label: "カテゴリー", defaultValue: CUSTOM_CATEGORIES[0], options: CUSTOM_CATEGORIES.map((value) => ({ value, label: value })) },
+          { key: "budget", label: "予算 (円)", type: "number", placeholder: "任意" },
+          { key: "priority", label: "優先度", defaultValue: "中", options: [{ value: "高", label: "高" }, { value: "中", label: "中" }, { value: "低", label: "低" }] },
+          { key: "status", label: "状態", defaultValue: "検討中", options: [{ value: "検討中", label: "検討中" }, { value: "購入予定", label: "購入予定" }, { value: "取付待ち", label: "取付待ち" }] },
+        ]}
+        renderSummary={(record) => <><strong>{record.part}</strong><br/><span style={{ color: COLORS.textMuted }}>{record.status || "検討中"} · 優先度{record.priority || "中"}{record.budget ? ` · ¥${Number(record.budget).toLocaleString()}` : ""}</span></>}
+      />
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <button onClick={() => onGo("maint")} style={secondaryButtonStyle}>整備履歴を見る</button>
         <button onClick={() => onGo("custom")} style={secondaryButtonStyle}>カスタム履歴を見る</button>
@@ -2369,6 +2454,9 @@ function MainApp() {
   const [circuitRecords, setCircuitRecords] = useState([]);
   const [customRecords, setCustomRecords] = useState([]);
   const [oilInterval, setOilInterval] = useState(5000);
+  const [reminders, setReminders] = useState([]);
+  const [presets, setPresets] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
   const [syncStatus, setSyncStatus] = useState("同期確認中");
   const [showModPopup, setShowModPopup] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -2397,6 +2485,9 @@ function MainApp() {
       setCircuitRecords(data["nd-circuit-records"] || []);
       setCustomRecords(data["nd-custom-records"] || []);
       setOilInterval(Number(data["nd-oil-interval"]) || 5000);
+      setReminders(data["nd-maint-reminders"] || []);
+      setPresets(data["nd-setup-presets"] || []);
+      setWishlist(data["nd-wishlist"] || []);
       setLoaded(true);
     })();
 
@@ -2438,6 +2529,9 @@ function MainApp() {
     if (!loaded) return;
     saveAppValue("nd-oil-interval", oilInterval);
   }, [oilInterval, loaded]);
+  useEffect(() => { if (loaded) saveAppValue("nd-maint-reminders", reminders); }, [reminders, loaded]);
+  useEffect(() => { if (loaded) saveAppValue("nd-setup-presets", presets); }, [presets, loaded]);
+  useEffect(() => { if (loaded) saveAppValue("nd-wishlist", wishlist); }, [wishlist, loaded]);
 
   const hasOilChange = (r) => {
     if (r.items) return r.items.some((it) => it.category === "エンジンオイル交換");
@@ -2463,6 +2557,9 @@ function MainApp() {
         "nd-circuit-records": circuitRecords,
         "nd-custom-records": customRecords,
         "nd-oil-interval": oilInterval,
+        "nd-maint-reminders": reminders,
+        "nd-setup-presets": presets,
+        "nd-wishlist": wishlist,
       },
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
@@ -2493,6 +2590,9 @@ function MainApp() {
       setCircuitRecords(circuit);
       setCustomRecords(custom);
       setOilInterval(Number(data["nd-oil-interval"]) || 5000);
+      setReminders(Array.isArray(data["nd-maint-reminders"]) ? data["nd-maint-reminders"] : []);
+      setPresets(Array.isArray(data["nd-setup-presets"]) ? data["nd-setup-presets"] : []);
+      setWishlist(Array.isArray(data["nd-wishlist"]) ? data["nd-wishlist"] : []);
       window.alert("バックアップを復元しました");
     } catch (err) {
       window.alert("復元できませんでした：" + (err.message || err));
@@ -2560,6 +2660,12 @@ function MainApp() {
             customRecords={customRecords}
             oilRemain={oilRemain}
             onGo={setTab}
+            reminders={reminders}
+            setReminders={setReminders}
+            presets={presets}
+            setPresets={setPresets}
+            wishlist={wishlist}
+            setWishlist={setWishlist}
           />
         )}
 
@@ -2750,6 +2856,9 @@ const STORAGE_KEYS = [
   "nd-circuit-records",
   "nd-custom-records",
   "nd-oil-interval",
+  "nd-maint-reminders",
+  "nd-setup-presets",
+  "nd-wishlist",
 ];
 const API_URL_KEY = "nd-gas-api-url";
 const SYNC_KEY_KEY = "nd-gas-sync-key";
@@ -2791,6 +2900,9 @@ function getLocalSnapshot() {
     "nd-circuit-records": loadJSON("nd-circuit-records", []),
     "nd-custom-records": loadJSON("nd-custom-records", []),
     "nd-oil-interval": Number(localStorage.getItem("nd-oil-interval")) || 5000,
+    "nd-maint-reminders": loadJSON("nd-maint-reminders", []),
+    "nd-setup-presets": loadJSON("nd-setup-presets", []),
+    "nd-wishlist": loadJSON("nd-wishlist", []),
   };
 }
 
